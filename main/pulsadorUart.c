@@ -19,8 +19,8 @@
 
 #define BUTTON_GPIO_22 22 // pulsador
 #define BUTTON_GPIO_23 23 // pulsador
+#define BUTTON_GPIO_34 34 // pulsador
 
-// #define 2_PI 6.2832 // 2 * PI
 #define TAM_ARRAY 400
 
 static const char *TAG = "UART";
@@ -78,6 +78,8 @@ void uart_send_task(void *pvParameters)
     uint32_t elPin;
     const char *msgAdelante = "adelante";
     const char *msgEnter = "enter";
+    const char *msgAtras = "atras";
+
     while (1)
     {
         // Verificamos si hay elementos en la cola
@@ -97,13 +99,18 @@ void uart_send_task(void *pvParameters)
                     uart_write_bytes(UART_NUM, msgEnter, strlen(msgEnter));
                     // ESP_LOGI(TAG, "Mensaje enviado por uart: %s", msgEnter);
                 }
+                else if (elPin == BUTTON_GPIO_34)
+                {
+                    uart_write_bytes(UART_NUM, msgAtras, strlen(msgAtras));
+                    // ESP_LOGI(TAG, "Mensaje enviado por uart: %s", msgAtras);
+                }
             }
         }
         else
         {
             // ESP_LOGI(TAG, "Cola vacía, esperando eventos...");
         }
-        vTaskDelay(100 / portTICK_PERIOD_MS); // Espera para no saturar el CPU
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 
@@ -111,7 +118,7 @@ dac_continuous_handle_t dac_continuous_handle;
 dac_continuous_config_t dac_config = {
     .chan_mask = DAC_CHANNEL_MASK_ALL,
     .desc_num = 8,
-    .buf_size = TAM_ARRAY, // 2048
+    .buf_size = TAM_ARRAY,
     .freq_hz = TAM_ARRAY * 2000,
     .offset = 0,
     .clk_src = DAC_DIGI_CLK_SRC_DEFAULT,
@@ -139,8 +146,8 @@ void generador_de_funciones(uint8_t signal_type, uint8_t amplitude_volts, uint16
         case 3: // Onda Triangular
             wave[i] = (i < tam / 2) ? (2 * amplitude * i / tam) : (2 * amplitude * (tam - i) / tam);
             break;
-        default: // Onda Senoidal por defecto
-            wave[i] = (uint8_t)((sin(2 * M_PI * i / tam) + 1) * amplitude / 2);
+        default: // Onda Cuadrada por defecto
+            wave[i] = (i < tam / 2) ? amplitude : 0;
             break;
         }
     }
@@ -175,10 +182,7 @@ void update_dac_config()
 
 static void uart_receive_task(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Recibiendo UART");
-    // uint8_t rx_uart[BUF_SIZE] = {0};
     char rx_uart[BUF_SIZE] = {0};
-    // size_t tamano_buffer = TAM_ARRAY;
 
     while (1)
     {
@@ -199,8 +203,8 @@ static void uart_receive_task(void *pvParameters)
             {
                 freq = atoi(token); // Convierte una cadena a entero
                 ESP_LOGI(TAG, "Frecuencia: %d", freq);
-            } 
-            
+            }
+
             // Extraer el segundo dato (amplitud)
             token = strtok(NULL, ","); // Obtiene el siguiente token después de la coma
             if (token != NULL)
@@ -209,7 +213,7 @@ static void uart_receive_task(void *pvParameters)
                 ESP_LOGI(TAG, "Amplitud: %d", amp);
             }
 
-            token = strtok(NULL, ","); 
+            token = strtok(NULL, ",");
             if (token != NULL)
             {
                 signal_type = atoi(token);
@@ -239,11 +243,16 @@ void app_main(void)
     gpio_reset_pin(BUTTON_GPIO_23);
     gpio_set_direction(BUTTON_GPIO_23, GPIO_MODE_INPUT);
 
+    gpio_reset_pin(BUTTON_GPIO_34);
+    gpio_set_direction(BUTTON_GPIO_34, GPIO_MODE_INPUT);
+
     cola = xQueueCreate(20, sizeof(unsigned int));
-    BaseType_t xReturned1, xReturned2;
-    TaskHandle_t xHandle1, xHandle2;
+    BaseType_t xReturned1, xReturned2, xReturned3;
+    TaskHandle_t xHandle1, xHandle2, xHandle3;
     xReturned1 = xTaskCreate(vTaskButton, "DetectarPulsadorPin22", 4096, (void *)BUTTON_GPIO_22, 15, &xHandle1);
     xReturned2 = xTaskCreate(vTaskButton, "DetectarPulsadorPin23", 4096, (void *)BUTTON_GPIO_23, 15, &xHandle2);
+    xReturned3 = xTaskCreate(vTaskButton, "DetectarPulsadorPin34", 4096, (void *)BUTTON_GPIO_34, 15, &xHandle3);
+
     xTaskCreate(uart_send_task, "EnviarUART", 4096, NULL, 10, NULL);
 
     if (xReturned1 != pdPASS)
@@ -260,7 +269,7 @@ void app_main(void)
             ;
     }
 
-    // Genera una señal inicial antes de usar la interfaz grafica
+    // Genera una señal inicial
     generador_de_funciones(1, 1, 0);
     dac_continuous_new_channels(&dac_config, &dac_continuous_handle);
     dac_continuous_enable(dac_continuous_handle);
