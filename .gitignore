@@ -52,7 +52,7 @@ Mkfile.old
 dkms.conf
 
 build/
-CMakeLists.txt
-*.old
-sdkconfig
+//CMakeLists.txt
+//*.old
+//sdkconfig
 
